@@ -1,9 +1,8 @@
-import os.path
+import sys
 import ssl
 import socket
 import validators
-import json
-from collections import namedtuple
+import pickle
 from urllib.parse import urlparse
 
 METHODS = ['OPTIONS', 'GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'TRACE',
@@ -30,8 +29,16 @@ class HttpMethodError(Exception):
     ...
 
 
-HttpResponse = namedtuple('HttpResponse',
-                          ['status_code', 'headers', 'content'])
+class HttpResponse:
+    def __init__(self, status_code, headers, content, text):
+        self.status_code = status_code
+        self.headers = headers
+        self.content = content
+        self.text = text
+
+    def save(self, filename):
+        with open(filename, 'wb') as file:
+            file.write(self.text)
 
 
 class HttpConnection:
@@ -40,14 +47,15 @@ class HttpConnection:
         self.host = None
         self.port = None
         self.path = None
+        self.text = None
 
         try:
-            with open(r'cookies.json', 'r', encoding='utf-8') as file:
-                self.cookies = json.load(file)
-        except (json.decoder.JSONDecodeError, FileNotFoundError):
+            with open(r'cookies.pickle', 'rb') as file:
+                self.cookies = pickle.load(file)
+        except Exception:
             self.cookies = {}
 
-    def request(self, method, url, headers=None, content=None, timeout=1):
+    def request(self, method, url, headers=None, content='', timeout=1):
         if method not in METHODS:
             raise HttpMethodError(f'Nonexistent HTTP request method: {method}')
         if not validators.url(url):
@@ -56,14 +64,17 @@ class HttpConnection:
             headers = {}
         self.extract_data_from_url(url)
         headers.setdefault('Host', self.host)
+        headers.setdefault('Connection', 'close')
+        # headers.setdefault('User-Agent', 'python')
+
         if self.host in self.cookies:
             headers.setdefault('Cookie', '; '.join(self.cookies[self.host]))
-        # headers.setdefault('User-Agent', 'python')
 
         request = [f'{method} {self.path} HTTP/1.1\r\n']
         for name, value in headers.items():
             request.append(f'{name}: {value}\r\n')
         request.append('\r\n')
+        request.append(content)
 
         self.socket.settimeout(timeout)
         self.socket.connect((self.host, self.port))
@@ -79,17 +90,17 @@ class HttpConnection:
             except socket.timeout:
                 break
 
-        response = b''.join(response).decode('utf-8')
+        self.text = b''.join(response)
 
         self.socket.close()
 
-        status_code = HttpConnection.extract_status_code(response)
-        headers = HttpConnection.extract_headers(response)
-        content = HttpConnection.extract_content(response)
+        status_code = HttpConnection.extract_status_code(self.text)
+        headers = HttpConnection.extract_headers(self.text)
+        content = HttpConnection.extract_content(self.text)
 
         self.set_cookie(headers)
 
-        return HttpResponse(status_code, headers, content)
+        return HttpResponse(status_code, headers, content, self.text)
 
     def extract_data_from_url(self, url):
         parsed_url = urlparse(url)
@@ -100,9 +111,9 @@ class HttpConnection:
     def set_cookie(self, headers):
         if 'Set-Cookie' in headers:
             self.cookies.setdefault(
-                self.host, []).append(headers['Set-Cookie'].split('; ')[0])
-        with open(r'cookies.json', 'w', encoding='utf-8') as file:
-            json.dump(self.cookies, file)
+                self.host, set()).add(headers['Set-Cookie'].split('; ')[0])
+        with open(r'cookies.pickle', 'wb') as file:
+            pickle.dump(self.cookies, file)
 
     @staticmethod
     def get_port(url):
@@ -112,28 +123,67 @@ class HttpConnection:
         return 80 if parsed_url.scheme == 'http' else 443
 
     @staticmethod
-    def extract_status_code(response: str) -> int:
+    def extract_status_code(response: bytes) -> int:
         return int(response.splitlines()[0].split()[1])
 
     @staticmethod
-    def extract_headers(response: str) -> dict:
+    def extract_headers(response: bytes) -> dict:
         headers = {}
-        raw_headers = response.split('\r\n\r\n')[0].splitlines()[1:]
+        raw_headers = response.split(b'\r\n\r\n')[0].decode(
+            'utf-8').splitlines()[1:]
         for raw_header in raw_headers:
             colon_index = raw_header.index(':')
             headers[raw_header[:colon_index]] = raw_header[colon_index + 2:]
         return headers
 
     @staticmethod
-    def extract_content(response: str) -> str:
-        return response.split('\r\n\r\n')[1]
+    def extract_content(response: bytes) -> str:
+        return response.split(b'\r\n\r\n')[1].decode('utf-8')
 
 
 if __name__ == '__main__':
-    hogwarts_url = 'https://anytask.org/'
+    hogwarts_url = 'https://urgu.org/150'
     client = HttpConnection()
 
-    response = client.request('GET', hogwarts_url)
+    response = client.request('GET', hogwarts_url, content='key=value')
     print(response.status_code)
     print(response.headers)
     print(response.content)
+
+    response.save('response.txt')
+
+    while True:
+        method = input('Enter method: ')
+
+        url = input('Enter full url: ')
+
+        headers_count = int(input('Enter headers\' count: '))
+        if headers_count:
+            print('Enter your headers in format Some_header: some_value')
+        headers = {}
+        for _ in range(headers_count):
+            header, value = input().split()
+            headers[header] = value
+
+        to_have_body = input('Do you need body? [y/n] ')
+
+        body = []
+        if to_have_body == 'y':
+            for line in sys.stdin:
+                body.append(line)
+        content = '\n'.join(body)
+
+        client = HttpConnection()
+        response = client.request(method, url, headers, content)
+        print(response.status_code)
+        print(response.headers)
+        print(response.content)
+
+        to_save_response = input('Do you want to save your response? [y/n] ')
+
+        if to_save_response == 'y':
+            filename = input('Enter your file/filepath: ')
+            response.save(filename)
+
+
+
