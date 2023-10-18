@@ -141,6 +141,16 @@ class HttpConnection:
         return response.split(b'\r\n\r\n')[1].decode('utf-8')
 
 
+def ask_yes_no(question):
+    while True:
+        answer = input(f'{question} [y/n]')
+        if answer not in ('y', 'n'):
+            print('Invalid answer')
+            print(f'Given {answer}')
+            continue
+        return answer == 'y'
+
+
 if __name__ == '__main__':
     # hogwarts_url = 'https://urgu.org/150'
     # client = HttpConnection()
@@ -175,10 +185,9 @@ if __name__ == '__main__':
             header, value = input().split()
             headers[header] = value
 
-        to_have_body = input('Do you need body? [y/n] ')
-
+        to_have_body = ask_yes_no('Do you need body?')
         body = []
-        if to_have_body == 'y':
+        if to_have_body:
             for line in sys.stdin:
                 body.append(line)
         content = '\n'.join(body)
@@ -189,11 +198,11 @@ if __name__ == '__main__':
         print(response.headers)
         print(response.content)
 
-        to_save_response = input('Do you want to save your response? [y/n] ')
-
-        if to_save_response == 'y':
+        to_save_response = ask_yes_no('Do you want to save response?')
+        if to_save_response:
             filename = input('Enter your file/filepath: ')
             response.save(filename)
 
-
-
+        to_continue = ask_yes_no('Continue?')
+        if not to_continue:
+            break
