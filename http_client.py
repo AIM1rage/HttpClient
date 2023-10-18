@@ -41,10 +41,10 @@ class HttpConnection:
         self.port = None
         self.path = None
 
-        if os.path.isfile('cookies.json'):
+        try:
             with open(r'cookies.json', 'r', encoding='utf-8') as file:
                 self.cookies = json.load(file)
-        else:
+        except (json.decoder.JSONDecodeError, FileNotFoundError):
             self.cookies = {}
 
     def request(self, method, url, headers=None, content=None, timeout=1):
@@ -57,7 +57,7 @@ class HttpConnection:
         self.extract_data_from_url(url)
         headers.setdefault('Host', self.host)
         if self.host in self.cookies:
-            headers.setdefault('Cookie', self.cookies[self.host])
+            headers.setdefault('Cookie', '; '.join(self.cookies[self.host]))
         # headers.setdefault('User-Agent', 'python')
 
         request = [f'{method} {self.path} HTTP/1.1\r\n']
@@ -99,7 +99,8 @@ class HttpConnection:
 
     def set_cookie(self, headers):
         if 'Set-Cookie' in headers:
-            self.cookies[self.host] = headers['Set-Cookie'].split('; ')[0]
+            self.cookies.setdefault(
+                self.host, []).append(headers['Set-Cookie'].split('; ')[0])
         with open(r'cookies.json', 'w', encoding='utf-8') as file:
             json.dump(self.cookies, file)
 
