@@ -142,20 +142,30 @@ class HttpConnection:
 
 
 if __name__ == '__main__':
-    hogwarts_url = 'https://urgu.org/150'
-    client = HttpConnection()
-
-    response = client.request('GET', hogwarts_url, content='key=value')
-    print(response.status_code)
-    print(response.headers)
-    print(response.content)
-
-    response.save('response.txt')
+    # hogwarts_url = 'https://urgu.org/150'
+    # client = HttpConnection()
+    #
+    # response = client.request('GET', hogwarts_url, content='key=value')
+    # print(response.status_code)
+    # print(response.headers)
+    # print(response.content)
+    #
+    # response.save('response.txt')
 
     while True:
-        method = input('Enter method: ')
+        while True:
+            method = input('Enter method: ')
+            if method not in METHODS:
+                print(f'Incorrect method: {method}')
+            else:
+                break
 
-        url = input('Enter full url: ')
+        while True:
+            url = input('Enter full url: ')
+            if not validators.url(url):
+                print(f'Incorrect url: {url}')
+            else:
+                break
 
         headers_count = int(input('Enter headers\' count: '))
         if headers_count:
