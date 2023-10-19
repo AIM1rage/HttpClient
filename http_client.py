@@ -138,7 +138,7 @@ class HttpConnection:
 
     @staticmethod
     def extract_content(response: bytes) -> str:
-        return response.split(b'\r\n\r\n')[1].decode('utf-8')
+        return b'\r\n\r\n'.join(response.split(b'\r\n\r\n')[1:]).decode('utf-8')
 
 
 def ask_yes_no(question):
@@ -164,43 +164,42 @@ if __name__ == '__main__':
 
     while True:
         while True:
-            method = input('Enter method: ')
+            method = input('Enter METHOD: ')
             if method not in METHODS:
-                print(f'Incorrect method: {method}')
+                print(f'Incorrect METHOD: {method}')
             else:
                 break
 
         while True:
-            url = input('Enter full url: ')
+            url = input('Enter full URL: ')
             if not validators.url(url):
-                print(f'Incorrect url: {url}')
+                print(f'Incorrect URL: {url}')
             else:
                 break
 
-        headers_count = int(input('Enter headers\' count: '))
+        headers_count = int(input('Enter headers\' COUNT: '))
         if headers_count:
-            print('Enter your headers in format Some_header: some_value')
+            print('Enter your headers in format SOME_HEADER: SOME_VALUE')
         headers = {}
         for _ in range(headers_count):
             header, value = input().split()
             headers[header] = value
 
-        to_have_body = ask_yes_no('Do you need body?')
-        body = []
-        if to_have_body:
-            for line in sys.stdin:
-                body.append(line)
-        content = '\n'.join(body)
+        to_have_content = ask_yes_no('Do you need BODY?')
+        content = ''
+        if to_have_content:
+            content = input()
 
         client = HttpConnection()
         response = client.request(method, url, headers, content)
         print(response.status_code)
         print(response.headers)
         print(response.content)
+        print(f'Your cookies: {client.cookies}')
 
-        to_save_response = ask_yes_no('Do you want to save response?')
+        to_save_response = ask_yes_no('Do you want to SAVE response?')
         if to_save_response:
-            filename = input('Enter your file/filepath: ')
+            filename = input('Enter your FILENAME/FILEPATH: ')
             response.save(filename)
 
         to_continue = ask_yes_no('Continue?')
