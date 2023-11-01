@@ -1,50 +1,53 @@
+import validators.url
 from urllib.parse import urlparse
 
 METHODS = ['OPTIONS', 'GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'TRACE',
            'CONNECT']
 
+GENERAL_HEADERS = ['Cache-Control', 'Connection', 'Date', 'Pragma', 'Trailer',
+                   'Transfer-Encoding', 'Upgrade', 'Via', 'Warning']
 
-class HttpMethodError(Exception):
+
+class MethodError(Exception):
+    ...
+
+
+class UrlError(Exception):
     ...
 
 
 class HttpRequest:
     def __init__(self):
-        self.method = 'GET'
-        self.path = '/'
-        self.version = 'HTTP/1.1'
-        self.headers = {}
-        self.content = b''
+        self.method: str = 'GET'
+        self.abs_path: str = '/'
+        self.http_version: str = 'HTTP/1.1'
+        self.headers: dict = {}
+        self.body: bytes = b''
 
     def add_method(self, method: str):
         if method.strip().upper() not in METHODS:
-            raise HttpMethodError(f'Wrong HTTP request method: {method}')
+            raise MethodError(f'Invalid HTTP request method: {method}')
         self.method = method
-        return self
 
     def add_url(self, url: str):
+        if not validators.url(url):
+            raise UrlError(f'Invalid URL: {url}')
         parsed_url = urlparse(url)
-        self.path = parsed_url.path if parsed_url.path else '/'
-        return self
-
-    def add_version(self, version: str):
-        self.version = version
-        return self
+        self.abs_path = parsed_url.path if parsed_url.path else '/'
 
     def add_headers(self, headers: dict):
-        self.headers |= headers
-        return self
+        self.headers = headers
 
-    def add_content(self, content: bytes):
-        self.content = content
-        return self
+    def add_content(self, body: bytes):
+        self.body = body
 
     def build_request(self) -> bytes:
-        request = [f'{self.method} {self.path} {self.version}\r\n'.encode()]
-        if len(self.content):
-            self.headers['Content-Length'] = len(self.content)
+        request = [
+            f'{self.method} {self.abs_path} {self.http_version}\r\n'.encode()]
+        if len(self.body):
+            self.headers['Content-Length'] = len(self.body)
         for header, value in self.headers.items():
             request.append(f'{header}: {value}\r\n'.encode())
         request.append('\r\n'.encode())
-        request.append(self.content)
+        request.append(self.body)
         return b''.join(request)
