@@ -21,7 +21,7 @@ class HttpClient:
 
         self.cookie_jar: CookieJar = CookieJar()
 
-        self.requests: deque[tuple[HttpRequest, str]] = deque()
+        self.requests: deque[tuple[HttpRequest, int | float, str]] = deque()
 
     async def connect(self, url):
         url = urlparse(url)
@@ -37,19 +37,18 @@ class HttpClient:
     async def consume(self):
         while True:
             if self.requests:
-                request, path = self.requests.popleft()
-
-                await self.send(request)
-
-                status_code, headers, status_line = await self.receive_response_information()
-                content = await self.receive_response_content(headers)
-                response = HttpResponse(status_code, status_line, headers,
-                                        content)
-
+                request, timeout, path = self.requests.popleft()
+                response = await asyncio.wait_for(
+                    self.receive_response(request), timeout)
                 if path:
                     Serializer.save_response(path, response)
+                await asyncio.sleep(1)
 
-                await asyncio.sleep(2)
+    async def receive_response(self, request: HttpRequest) -> HttpResponse:
+        await self.send(request)
+        status_code, headers, status_line = await self.receive_response_information()
+        content = await self.receive_response_content(headers)
+        return HttpResponse(status_code, status_line, headers, content)
 
     async def send(self, request: HttpRequest):
         logger.info(f'Sending request: {request.build_request()}')
@@ -59,7 +58,8 @@ class HttpClient:
 
     async def receive_response_information(self) -> tuple[
         int, dict[str, str], str]:
-        info = (await self.reader.readuntil(b'\r\n\r\n')).decode()
+        info = (await asyncio.wait_for(self.reader.readuntil(b'\r\n\r\n'),
+                                       10)).decode()
         status_line = info.split('\r\n')[0]
         status_code = int(status_line.split()[1])
         headers = {line.split(':')[0]: ':'.join(line.split(':')[1:]).strip()
@@ -118,14 +118,14 @@ class HttpClient:
     def request(self,
                 method: str,
                 url: str,
-                headers: Optional[dict[str, str]] = None,
-                content: Optional[bytes] = None,
-                path: Optional[str] = None,
+                headers: Optional[dict[str, str]] = {},
+                content: Optional[bytes] = b'',
+                timeout: Optional[int | float] = 5,
+                path: Optional[str] = '',
                 ):
         host = urlparse(url).hostname
 
-        headers = {} if headers is None else headers
-        content = b'' if content is None else content
+        headers = {} if headers else headers
 
         headers |= {'Host': host,
                     'Connection': 'keep-alive',
@@ -137,12 +137,12 @@ class HttpClient:
                               headers=headers,
                               data=content,
                               )
-        self.requests.append((request, path))
+        self.requests.append((request, timeout, path))
 
 
 async def main():
-    url1 = 'https://ulearn.me/Course/BasicProgramming/Praktika_Mediannyy_fil_tr__4597a6db-5f8e-4bad-a435-8755a3cb61b5'
-    url2 = 'https://ulearn.me/Course/cs2/MazeBuilder_9ccc789a-9c35-4757-9194-6154c9f1d503'
+    # url1 = 'https://ulearn.me/Course/BasicProgramming/Praktika_Mediannyy_fil_tr__4597a6db-5f8e-4bad-a435-8755a3cb61b5'
+    # url2 = 'https://ulearn.me/Course/cs2/MazeBuilder_9ccc789a-9c35-4757-9194-6154c9f1d503'
     # url1 = 'https://kadm.kmath.ru/news.php'
     # url2 = 'https://kadm.kmath.ru/news.php'
     # url1 = url2 = 'https://alexbers.com/'
@@ -150,11 +150,11 @@ async def main():
     # url1 = url2 = 'https://developer.mozilla.org/en-US/docs/Glossary/Payload_header'
     # url1 = url2 = 'http://www.china.com.cn/'
     # url1 = url2 = 'http://government.ru/'
-    # url1 = url2 = 'https://anytask.org/'
+    url1 = url2 = 'https://anytask.org/'
     client = HttpClient()
     await client.connect(url1)
-    client.request('POST', url2, content=b'aboba', path='aboba')
-    client.request('GET', url1)
+    client.request('POST', url2, content=b'aboba', path='post', timeout=3)
+    client.request('GET', url1, path='get')
     await client.handle()
 
 
