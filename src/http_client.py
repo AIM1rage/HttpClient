@@ -2,11 +2,11 @@ import asyncio
 from asyncio import StreamReader, StreamWriter
 from urllib.parse import urlparse
 from collections import deque
-from typing import Optional
+from typing import Optional, AsyncIterator
 from loguru import logger
-from http_request import HttpRequest
-from http_response import HttpResponse
-from serializer import Serializer
+from src.http_request import HttpRequest
+from src.http_response import HttpResponse
+from src.serializer import Serializer
 
 HAVING_BODY_METHODS = ['PUT', 'POST', 'PATCH']
 METHODS = ['TRACE', 'GET', 'POST', 'HEAD', 'CONNECT', 'DELETE', 'OPTIONS',
@@ -41,19 +41,14 @@ class HttpClient:
         self.last_connection = (host, port)
         self.is_connected = True
 
-    async def handle(self):
-        consume_task = asyncio.create_task(self.consume())
-        done, pending = await asyncio.wait(
-            [consume_task],
-            return_when=asyncio.FIRST_COMPLETED
-        )
-        for task in pending:
-            task.cancel()
-
-    async def consume(self):
+    async def get_responses(self) -> AsyncIterator:
         while True:
             if self.requests:
-                request, timeout, path = self.requests.popleft()
+                left = self.requests.popleft()
+                if left is None:
+                    await self.close_connection()
+                    return
+                request, timeout, path = left
                 self.add_cookies(request)
 
                 await self.configure_connection(request=request)
@@ -67,6 +62,8 @@ class HttpClient:
 
                 if path:
                     Serializer.save_response(path, response)
+
+                yield response
                 await asyncio.sleep(1)
 
     async def receive_response(self, request: HttpRequest) -> HttpResponse:
@@ -114,13 +111,13 @@ class HttpClient:
             content = b''.join(content)
             del headers['Transfer-Encoding']
             headers['Content-Length'] = str(len(content))
-            logger.info(f'Receiving content: {content}')
+            logger.info(f'Receiving content: ...')
             await asyncio.sleep(0.01)
             return content
         if 'Content-Length' in headers:
             content_length = int(headers['Content-Length'])
             content = await self.reader.readexactly(content_length)
-            logger.info(f'Receiving content: {content}')
+            logger.info(f'Receiving content: ...')
             await asyncio.sleep(0.01)
             return content
         raise UnknownContentError
@@ -134,15 +131,17 @@ class HttpClient:
                 await self.connect(request.full_url)
                 return
             if self.is_connected and (host, port) != self.last_connection:
-                self.writer.close()
-                await self.writer.wait_closed()
+                await self.close_connection()
                 await self.connect(request.full_url)
                 return
         if response is not None and response.headers['Connection'] == 'close':
             self.is_connected = False
-            self.writer.close()
-            await self.writer.wait_closed()
+            await self.close_connection()
             return
+
+    async def close_connection(self):
+        self.writer.close()
+        await self.writer.wait_closed()
 
     @staticmethod
     def extract_host_port_ssl(url: str) -> tuple[str, int, bool]:
@@ -200,6 +199,9 @@ class HttpClient:
 
         self.requests.append((request, timeout, path))
 
+    def close(self):
+        self.requests.append(None)
+
 
 async def main():
     # url1 = 'https://ulearn.me/Course/BasicProgramming/Praktika_Mediannyy_fil_tr__4597a6db-5f8e-4bad-a435-8755a3cb61b5'
@@ -209,24 +211,25 @@ async def main():
     # url1 = url2 = 'https://alexbers.com/'
     # url1 = url2 = 'https://yandex.ru/'
     # url1 = url2 = 'https://developer.mozilla.org/en-US/docs/Glossary/Payload_header'
-    url1 = url2 = 'http://www.china.com.cn/'
+    # url1 = url2 = 'http://www.china.com.cn/'
     # url1 = url2 = 'http://government.ru/'
-    # url1 = url2 = 'https://anytask.org'
+    url1 = url2 = 'https://anytask.org'
     # url1 = url2 = 'https://urgu.org/151'
     # url1 = url2 = 'https://www.example.com'
     client = HttpClient()
     # await client.connect(url1)
-    # for method in HAVING_BODY_METHODS:
-    #     client.request(method, url2,
-    #                    content=b'aboba',
-    #                    path=f'{method}.txt',
-    #                    timeout=3)
-    # for method in (m for m in METHODS if m not in HAVING_BODY_METHODS):
-    #     client.request(method, url2,
-    #                    path=f'{method}.txt',
-    #                    timeout=3)
-    client.request('delete', url1, timeout=3, path='../DELETE.txt')
-    await client.handle()
+    for method in HAVING_BODY_METHODS:
+        client.request(method, url2,
+                       content=b'aboba',
+                       path=f'{method}.txt',
+                       timeout=3)
+    for method in (m for m in METHODS if m not in HAVING_BODY_METHODS):
+        client.request(method, url2,
+                       path=f'{method}.txt',
+                       timeout=3)
+    # client.request('delete', url1, timeout=3, path='../DELETE.txt')
+    async for response in client.get_responses():
+        ...
 
 
 if __name__ == '__main__':

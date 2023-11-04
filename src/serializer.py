@@ -1,7 +1,7 @@
 import json
 import os
-from http_response import HttpResponse
-from http_request import HttpRequest
+from src.http_response import HttpResponse
+from src.http_request import HttpRequest
 from urllib.parse import urlparse
 
 
