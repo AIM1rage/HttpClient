@@ -6,7 +6,6 @@ from typing import Optional
 from loguru import logger
 from http_request import HttpRequest
 from http_response import HttpResponse
-from http.cookiejar import CookieJar, Cookie
 from serializer import Serializer
 
 
@@ -19,7 +18,7 @@ class HttpClient:
         self.reader: StreamReader = None
         self.writer: StreamWriter = None
 
-        self.cookie_jar: CookieJar = CookieJar()
+        self.cookie_jar: dict[str, dict[str, str]] = Serializer.load_cookies()
 
         self.requests: deque[tuple[HttpRequest, int | float, str]] = deque()
 
@@ -34,12 +33,24 @@ class HttpClient:
                 url.hostname, 80
             )
 
+    async def handle(self):
+        consume_task = asyncio.create_task(self.consume())
+        done, pending = await asyncio.wait(
+            [consume_task],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+        for task in pending:
+            task.cancel()
+
     async def consume(self):
         while True:
             if self.requests:
                 request, timeout, path = self.requests.popleft()
+                self.add_cookies(request)
                 response = await asyncio.wait_for(
-                    self.receive_response(request), timeout)
+                    self.receive_response(request),
+                    timeout)
+                self.extract_cookies(request, response)
                 if path:
                     Serializer.save_response(path, response)
                 await asyncio.sleep(1)
@@ -97,23 +108,21 @@ class HttpClient:
             return content
         raise UnknownContentError
 
-    async def handle(self):
-        consume_task = asyncio.create_task(self.consume())
-        done, pending = await asyncio.wait(
-            [consume_task],
-            return_when=asyncio.FIRST_COMPLETED
-        )
-        for task in pending:
-            task.cancel()
+    def add_cookies(self, request: HttpRequest):
+        full_path = Serializer.get_full_path(request)
+        if full_path in self.cookie_jar:
+            cookies = []
+            for name, value in self.cookie_jar[full_path].items():
+                cookies.append(f'{name}={value}')
+            request.add_header('Cookie', ', '.join(cookies))
 
-    # TODO написать поддержку куки
-    # def extract_cookies(self,
-    #                     request: HttpRequest,
-    #                     response_headers: dict[str, str]):
-    #     if 'set-cookie' in response_headers:
-    #         ...
-    #     if 'set-cookie2' in response_headers:
-    #         ...
+    def extract_cookies(self, request: HttpRequest, response: HttpResponse):
+        full_path = Serializer.get_full_path(request)
+        if response.has_header('Set-Cookie'):
+            cookie = response.headers['Set-Cookie'].split('; ')[0]
+            name, value = cookie.split('=')
+            self.cookie_jar.setdefault(full_path, {})[name] = value
+            Serializer.dump_cookies(self.cookie_jar)
 
     def request(self,
                 method: str,
@@ -145,12 +154,12 @@ async def main():
     # url2 = 'https://ulearn.me/Course/cs2/MazeBuilder_9ccc789a-9c35-4757-9194-6154c9f1d503'
     # url1 = 'https://kadm.kmath.ru/news.php'
     # url2 = 'https://kadm.kmath.ru/news.php'
-    # url1 = url2 = 'https://alexbers.com/'
+    url1 = url2 = 'https://alexbers.com/'
     # url1 = url2 = 'https://yandex.ru/'
     # url1 = url2 = 'https://developer.mozilla.org/en-US/docs/Glossary/Payload_header'
     # url1 = url2 = 'http://www.china.com.cn/'
     # url1 = url2 = 'http://government.ru/'
-    url1 = url2 = 'https://anytask.org/'
+    # url1 = url2 = 'https://anytask.org'
     client = HttpClient()
     await client.connect(url1)
     client.request('POST', url2, content=b'aboba', path='post', timeout=3)

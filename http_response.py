@@ -10,6 +10,9 @@ class HttpResponse:
         self.headers: dict[str, str] = headers
         self.content: bytes = content
 
+    def has_header(self, header):
+        return header in self.headers
+
     def build_response(self):
         response = [self.status_line.encode()]
         for header, value in self.headers.items():
