@@ -30,16 +30,16 @@ class HttpClient:
 
         self.requests: deque[tuple[HttpRequest, int | float, str]] = deque()
 
-    async def connect(self, url):
-        url = urlparse(url)
-        if url.scheme == 'https':
-            self.reader, self.writer = await asyncio.open_connection(
-                url.hostname, 443, ssl=True
-            )
-        else:
-            self.reader, self.writer = await asyncio.open_connection(
-                url.hostname, 80
-            )
+        self.last_connection: tuple[str, int] = None
+        self.is_connected: bool = False
+
+    async def connect(self, url: str):
+        host, port, ssl = HttpClient.extract_host_port_ssl(url)
+        self.reader, self.writer = await asyncio.open_connection(
+            host, port, ssl=ssl
+        )
+        self.last_connection = (host, port)
+        self.is_connected = True
 
     async def handle(self):
         consume_task = asyncio.create_task(self.consume())
@@ -55,10 +55,16 @@ class HttpClient:
             if self.requests:
                 request, timeout, path = self.requests.popleft()
                 self.add_cookies(request)
+
+                await self.configure_connection(request=request)
+
                 response = await asyncio.wait_for(
                     self.receive_response(request),
                     timeout)
                 self.extract_cookies(request, response)
+
+                await self.configure_connection(response=response)
+
                 if path:
                     Serializer.save_response(path, response)
                 await asyncio.sleep(1)
@@ -119,6 +125,33 @@ class HttpClient:
             return content
         raise UnknownContentError
 
+    async def configure_connection(self,
+                                   request: HttpRequest = None,
+                                   response: HttpResponse = None):
+        if request is not None:
+            host, port, _ = HttpClient.extract_host_port_ssl(request.full_url)
+            if not self.is_connected:
+                await self.connect(request.full_url)
+                return
+            if self.is_connected and (host, port) != self.last_connection:
+                self.writer.close()
+                await self.writer.wait_closed()
+                await self.connect(request.full_url)
+                return
+        if response is not None and response.headers['Connection'] == 'close':
+            self.is_connected = False
+            self.writer.close()
+            await self.writer.wait_closed()
+            return
+
+    @staticmethod
+    def extract_host_port_ssl(url: str) -> tuple[str, int, bool]:
+        url = urlparse(url)
+        if url.scheme == 'https':
+            return url.hostname, 443, True
+        else:
+            return url.hostname, 80, False
+
     def add_cookies(self, request: HttpRequest):
         full_path = Serializer.get_full_path(request)
         if full_path in self.cookie_jar:
@@ -176,22 +209,23 @@ async def main():
     # url1 = url2 = 'https://alexbers.com/'
     # url1 = url2 = 'https://yandex.ru/'
     # url1 = url2 = 'https://developer.mozilla.org/en-US/docs/Glossary/Payload_header'
-    # url1 = url2 = 'http://www.china.com.cn/'
+    url1 = url2 = 'http://www.china.com.cn/'
     # url1 = url2 = 'http://government.ru/'
     # url1 = url2 = 'https://anytask.org'
-    url1 = url2 = 'https://urgu.org/151'
+    # url1 = url2 = 'https://urgu.org/151'
     # url1 = url2 = 'https://www.example.com'
     client = HttpClient()
-    await client.connect(url1)
-    for method in HAVING_BODY_METHODS:
-        client.request(method, url2,
-                       content=b'aboba',
-                       path=f'{method}.txt',
-                       timeout=3)
-    for method in (m for m in METHODS if m not in HAVING_BODY_METHODS):
-        client.request(method, url2,
-                       path=f'{method}.txt',
-                       timeout=3)
+    # await client.connect(url1)
+    # for method in HAVING_BODY_METHODS:
+    #     client.request(method, url2,
+    #                    content=b'aboba',
+    #                    path=f'{method}.txt',
+    #                    timeout=3)
+    # for method in (m for m in METHODS if m not in HAVING_BODY_METHODS):
+    #     client.request(method, url2,
+    #                    path=f'{method}.txt',
+    #                    timeout=3)
+    client.request('delete', url1, timeout=3, path='../DELETE.txt')
     await client.handle()
 
 
