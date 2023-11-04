@@ -4,9 +4,10 @@ from urllib.parse import urlparse
 from collections import deque
 from typing import Optional
 from loguru import logger
-from datetime import datetime
 from http_request import HttpRequest
+from http_response import HttpResponse
 from http.cookiejar import CookieJar, Cookie
+from serializer import Serializer
 
 
 class UnknownContentError(Exception):
@@ -20,7 +21,7 @@ class HttpClient:
 
         self.cookie_jar: CookieJar = CookieJar()
 
-        self.requests: deque[HttpRequest] = deque()
+        self.requests: deque[tuple[HttpRequest, str]] = deque()
 
     async def connect(self, url):
         url = urlparse(url)
@@ -36,20 +37,17 @@ class HttpClient:
     async def consume(self):
         while True:
             if self.requests:
-                request = self.requests.popleft()
-                # self.cookie_jar.add_cookie_header(request)
+                request, path = self.requests.popleft()
 
                 await self.send(request)
 
-                status_code, headers = await self.receive_response_information()
-
-                self.extract_cookies(request, headers)
-
+                status_code, headers, status_line = await self.receive_response_information()
                 content = await self.receive_response_content(headers)
+                response = HttpResponse(status_code, status_line, headers,
+                                        content)
 
-                content_path = f'{datetime.now().strftime("%H-%M-%S-%d-%m-%Y")}'
-                with open(content_path, 'wb') as content_file:
-                    content_file.write(content)
+                if path:
+                    Serializer.save_response(path, response)
 
                 await asyncio.sleep(2)
 
@@ -59,19 +57,21 @@ class HttpClient:
         await self.writer.drain()
         await asyncio.sleep(0.01)
 
-    async def receive_response_information(self) -> tuple[int, dict[str, str]]:
-        info = (await self.reader.readuntil(b'\r\n\r\n')).decode().lower()
-        status_code = int(info.split('\r\n')[0].split()[1])
+    async def receive_response_information(self) -> tuple[
+        int, dict[str, str], str]:
+        info = (await self.reader.readuntil(b'\r\n\r\n')).decode()
+        status_line = info.split('\r\n')[0]
+        status_code = int(status_line.split()[1])
         headers = {line.split(':')[0]: ':'.join(line.split(':')[1:]).strip()
                    for line
                    in info.split('\r\n')[1:-2]}
         logger.info(f'Receiving status code: {status_code}')
         logger.info(f'Receiving headers: {headers}')
         await asyncio.sleep(0.01)
-        return status_code, headers
+        return status_code, headers, status_line
 
     async def receive_response_content(self, headers: dict[str, str]) -> bytes:
-        if headers.get('transfer-encoding') == 'chunked':
+        if headers.get('Transfer-Encoding') == 'chunked':
             content = []
             while True:
                 chunk_size = (
@@ -79,18 +79,18 @@ class HttpClient:
                 chunk_size = int(chunk_size, base=16)
                 chunk = await self.reader.readexactly(chunk_size)
                 crlf = await self.reader.readuntil(b'\r\n')
-                logger.info(f'Receiving chunk: {chunk}')
+                logger.info(f'Receiving chunk sized {chunk_size}: {chunk}')
                 if chunk_size == 0:
                     break
                 content.append(chunk)
             content = b''.join(content)
-            del headers['transfer-encoding']
-            headers['content-length'] = str(len(content))
+            del headers['Transfer-Encoding']
+            headers['Content-Length'] = str(len(content))
             logger.info(f'Receiving content: {content}')
             await asyncio.sleep(0.01)
             return content
-        if 'content-length' in headers:
-            content_length = int(headers['content-length'])
+        if 'Content-Length' in headers:
+            content_length = int(headers['Content-Length'])
             content = await self.reader.readexactly(content_length)
             logger.info(f'Receiving content: {content}')
             await asyncio.sleep(0.01)
@@ -107,19 +107,21 @@ class HttpClient:
             task.cancel()
 
     # TODO написать поддержку куки
-    def extract_cookies(self,
-                        request: HttpRequest,
-                        response_headers: dict[str, str]):
-        if 'set-cookie' in response_headers:
-            ...
-        if 'set-cookie2' in response_headers:
-            ...
+    # def extract_cookies(self,
+    #                     request: HttpRequest,
+    #                     response_headers: dict[str, str]):
+    #     if 'set-cookie' in response_headers:
+    #         ...
+    #     if 'set-cookie2' in response_headers:
+    #         ...
 
     def request(self,
                 method: str,
                 url: str,
                 headers: Optional[dict[str, str]] = None,
-                content: Optional[bytes] = None):
+                content: Optional[bytes] = None,
+                path: Optional[str] = None,
+                ):
         host = urlparse(url).hostname
 
         headers = {} if headers is None else headers
@@ -135,12 +137,12 @@ class HttpClient:
                               headers=headers,
                               data=content,
                               )
-        self.requests.append(request)
+        self.requests.append((request, path))
 
 
 async def main():
-    # url1 = 'https://ulearn.me/Course/BasicProgramming/Praktika_Mediannyy_fil_tr__4597a6db-5f8e-4bad-a435-8755a3cb61b5'
-    # url2 = 'https://ulearn.me/Course/cs2/MazeBuilder_9ccc789a-9c35-4757-9194-6154c9f1d503'
+    url1 = 'https://ulearn.me/Course/BasicProgramming/Praktika_Mediannyy_fil_tr__4597a6db-5f8e-4bad-a435-8755a3cb61b5'
+    url2 = 'https://ulearn.me/Course/cs2/MazeBuilder_9ccc789a-9c35-4757-9194-6154c9f1d503'
     # url1 = 'https://kadm.kmath.ru/news.php'
     # url2 = 'https://kadm.kmath.ru/news.php'
     # url1 = url2 = 'https://alexbers.com/'
@@ -148,10 +150,10 @@ async def main():
     # url1 = url2 = 'https://developer.mozilla.org/en-US/docs/Glossary/Payload_header'
     # url1 = url2 = 'http://www.china.com.cn/'
     # url1 = url2 = 'http://government.ru/'
-    url1 = url2 = 'https://anytask.org/'
+    # url1 = url2 = 'https://anytask.org/'
     client = HttpClient()
     await client.connect(url1)
-    client.request('POST', url2, content=b'aboba')
+    client.request('POST', url2, content=b'aboba', path='aboba')
     client.request('GET', url1)
     await client.handle()
 
