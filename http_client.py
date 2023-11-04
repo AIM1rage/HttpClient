@@ -8,8 +8,16 @@ from http_request import HttpRequest
 from http_response import HttpResponse
 from serializer import Serializer
 
+HAVING_BODY_METHODS = ['PUT', 'POST', 'PATCH']
+METHODS = ['TRACE', 'GET', 'POST', 'HEAD', 'CONNECT', 'DELETE', 'OPTIONS',
+           'PATCH', 'PUT']
+
 
 class UnknownContentError(Exception):
+    ...
+
+
+class BadRequestError(Exception):
     ...
 
 
@@ -58,7 +66,10 @@ class HttpClient:
     async def receive_response(self, request: HttpRequest) -> HttpResponse:
         await self.send(request)
         status_code, headers, status_line = await self.receive_response_information()
-        content = await self.receive_response_content(headers)
+        if request.method != 'HEAD':
+            content = await self.receive_response_content(headers)
+        else:
+            content = b''
         return HttpResponse(status_code, status_line, headers, content)
 
     async def send(self, request: HttpRequest):
@@ -138,14 +149,22 @@ class HttpClient:
 
         headers |= {'Host': host,
                     'Connection': 'keep-alive',
-                    'Content-Length': f'{len(content)}',
+                    'Content-Length': str(len(content)),
                     }
 
+        if method.upper() not in METHODS:
+            raise BadRequestError(f'Invalid method {method}')
+
+        if content and method.upper() not in HAVING_BODY_METHODS:
+            raise BadRequestError(
+                f"Request with specified method ({method}) doesn't have body")
+
         request = HttpRequest(url,
-                              method=method,
+                              method=method.upper(),
                               headers=headers,
-                              data=content,
+                              data=content
                               )
+
         self.requests.append((request, timeout, path))
 
 
@@ -154,16 +173,25 @@ async def main():
     # url2 = 'https://ulearn.me/Course/cs2/MazeBuilder_9ccc789a-9c35-4757-9194-6154c9f1d503'
     # url1 = 'https://kadm.kmath.ru/news.php'
     # url2 = 'https://kadm.kmath.ru/news.php'
-    url1 = url2 = 'https://alexbers.com/'
+    # url1 = url2 = 'https://alexbers.com/'
     # url1 = url2 = 'https://yandex.ru/'
     # url1 = url2 = 'https://developer.mozilla.org/en-US/docs/Glossary/Payload_header'
     # url1 = url2 = 'http://www.china.com.cn/'
     # url1 = url2 = 'http://government.ru/'
     # url1 = url2 = 'https://anytask.org'
+    url1 = url2 = 'https://urgu.org/151'
+    # url1 = url2 = 'https://www.example.com'
     client = HttpClient()
     await client.connect(url1)
-    client.request('POST', url2, content=b'aboba', path='post', timeout=3)
-    client.request('GET', url1, path='get')
+    for method in HAVING_BODY_METHODS:
+        client.request(method, url2,
+                       content=b'aboba',
+                       path=f'{method}.txt',
+                       timeout=3)
+    for method in (m for m in METHODS if m not in HAVING_BODY_METHODS):
+        client.request(method, url2,
+                       path=f'{method}.txt',
+                       timeout=3)
     await client.handle()
 
 
