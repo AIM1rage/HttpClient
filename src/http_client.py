@@ -28,8 +28,6 @@ class HttpClient:
 
         self.cookie_jar: dict[str, dict[str, str]] = Serializer.load_cookies()
 
-        self.requests: deque[tuple[HttpRequest, int | float, str]] = deque()
-
         self.last_connection: tuple[str, int] = None
         self.is_connected: bool = False
 
@@ -41,30 +39,27 @@ class HttpClient:
         self.last_connection = (host, port)
         self.is_connected = True
 
-    async def get_responses(self) -> AsyncIterator:
-        while True:
-            if self.requests:
-                left = self.requests.popleft()
-                if left is None:
-                    await self.close_connection()
-                    return
-                request, timeout, path = left
-                self.add_cookies(request)
+    async def get_response(self,
+                           request: HttpRequest,
+                           timeout: int | float,
+                           path: str,
+                           ) -> HttpResponse:
+        self.add_cookies(request)
 
-                await self.configure_connection(request=request)
+        await self.configure_connection(request=request)
 
-                response = await asyncio.wait_for(
-                    self.receive_response(request),
-                    timeout)
-                self.extract_cookies(request, response)
+        response = await asyncio.wait_for(
+            self.receive_response(request),
+            timeout)
+        self.extract_cookies(request, response)
 
-                await self.configure_connection(response=response)
+        await self.configure_connection(response=response)
 
-                if path:
-                    Serializer.save_response(path, response)
+        if path:
+            Serializer.save_response(path, response)
 
-                yield response
-                await asyncio.sleep(1)
+        await asyncio.sleep(1)
+        return response
 
     async def receive_response(self, request: HttpRequest) -> HttpResponse:
         await self.send(request)
@@ -131,15 +126,16 @@ class HttpClient:
                 await self.connect(request.full_url)
                 return
             if self.is_connected and (host, port) != self.last_connection:
-                await self.close_connection()
+                await self.close()
                 await self.connect(request.full_url)
                 return
         if response is not None and response.headers['Connection'] == 'close':
             self.is_connected = False
-            await self.close_connection()
+            await self.close()
             return
 
-    async def close_connection(self):
+    async def close(self):
+        self.is_connected = False
         self.writer.close()
         await self.writer.wait_closed()
 
@@ -167,14 +163,14 @@ class HttpClient:
             self.cookie_jar.setdefault(full_path, {})[name] = value
             Serializer.dump_cookies(self.cookie_jar)
 
-    def request(self,
-                method: str,
-                url: str,
-                headers: Optional[dict[str, str]] = {},
-                content: Optional[bytes] = b'',
-                timeout: Optional[int | float] = 5,
-                path: Optional[str] = '',
-                ):
+    async def request(self,
+                      method: str,
+                      url: str,
+                      headers: Optional[dict[str, str]] = {},
+                      content: Optional[bytes] = b'',
+                      timeout: Optional[int | float] = 5,
+                      path: Optional[str] = '',
+                      ) -> HttpResponse:
         host = urlparse(url).hostname
 
         headers = {} if headers else headers
@@ -197,15 +193,12 @@ class HttpClient:
                               data=content
                               )
 
-        self.requests.append((request, timeout, path))
-
-    def close(self):
-        self.requests.append(None)
+        return await self.get_response(request, timeout, path)
 
 
 async def main():
     # url1 = 'https://ulearn.me/Course/BasicProgramming/Praktika_Mediannyy_fil_tr__4597a6db-5f8e-4bad-a435-8755a3cb61b5'
-    # url2 = 'https://ulearn.me/Course/cs2/MazeBuilder_9ccc789a-9c35-4757-9194-6154c9f1d503'
+    url2 = 'https://ulearn.me/Course/cs2/MazeBuilder_9ccc789a-9c35-4757-9194-6154c9f1d503'
     # url1 = 'https://kadm.kmath.ru/news.php'
     # url2 = 'https://kadm.kmath.ru/news.php'
     # url1 = url2 = 'https://alexbers.com/'
@@ -213,23 +206,20 @@ async def main():
     # url1 = url2 = 'https://developer.mozilla.org/en-US/docs/Glossary/Payload_header'
     # url1 = url2 = 'http://www.china.com.cn/'
     # url1 = url2 = 'http://government.ru/'
-    url1 = url2 = 'https://anytask.org'
-    # url1 = url2 = 'https://urgu.org/151'
+    url1 = 'https://urgu.org/151'
     # url1 = url2 = 'https://www.example.com'
     client = HttpClient()
     # await client.connect(url1)
     for method in HAVING_BODY_METHODS:
-        client.request(method, url2,
-                       content=b'aboba',
-                       path=f'{method}.txt',
-                       timeout=3)
+        await client.request(method, url2,
+                             content=b'aboba',
+                             path=f'{method}.txt',
+                             timeout=3)
     for method in (m for m in METHODS if m not in HAVING_BODY_METHODS):
-        client.request(method, url2,
-                       path=f'{method}.txt',
-                       timeout=3)
-    # client.request('delete', url1, timeout=3, path='../DELETE.txt')
-    async for response in client.get_responses():
-        ...
+        await client.request(method, url1,
+                             path=f'{method}.txt',
+                             timeout=3)
+    await client.close()
 
 
 if __name__ == '__main__':

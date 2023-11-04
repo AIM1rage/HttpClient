@@ -11,10 +11,8 @@ class HttpClientTest(unittest.TestCase):
     async def test_async_client_has_cookie(self):
         client = HttpClient()
         url = 'https://anytask.org/'
-        client.request('GET', url)
-        client.close()
-        async for _ in client.get_responses():
-            ...
+        response = await client.request('GET', url)
+        await client.close()
         self.assertIn('anytask.org/', client.cookie_jar)
 
     def test_all_methods_work(self):
@@ -23,15 +21,15 @@ class HttpClientTest(unittest.TestCase):
     async def test_async_all_methods_work(self):
         client = HttpClient()
         url = 'https://urgu.org/150'
+        responses = []
         for method in HAVING_BODY_METHODS:
-            client.request(method, url,
-                           content=b'aboba',
-                           timeout=3)
+            responses.append(await client.request(method, url,
+                                                  content=b'aboba',
+                                                  timeout=3))
         for method in (m for m in METHODS if m not in HAVING_BODY_METHODS):
-            client.request(method, url,
-                           timeout=3)
-        client.close()
-        responses = [response async for response in client.get_responses()]
+            responses.append(await client.request(method, url,
+                                                  timeout=3))
+        await client.close()
         self.assertEqual(len(METHODS), len(responses))
 
 
