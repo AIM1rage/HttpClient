@@ -5,7 +5,7 @@ import contextlib
 import validators
 
 from validators import ValidationError
-
+from socket import gaierror, herror
 from prompt_toolkit import PromptSession
 from prompt_toolkit.shortcuts import ProgressBar
 from prompt_toolkit.formatted_text import HTML
@@ -38,7 +38,7 @@ def validate_arguments(args):
     if args.method.upper() not in METHODS:
         raise BadRequestError(f'Invalid method {args.method}')
     if not validators.url(args.url):
-        raise ValidationError(f'Invalid URL {args.url}')
+        raise ValueError(f'Invalid URL {args.url}')
     if args.input:
         if not os.path.exists(args.input):
             raise FileNotFoundError(f'Input file doesn\'t exist')
@@ -92,7 +92,7 @@ def main():
                     FileNotFoundError,
                     PermissionError,
                     TypeError,
-                    ValueError
+                    ValueError,
                     ) as e:
                 print(e)
                 continue
@@ -115,7 +115,10 @@ def main():
                                        ))
                     loop.run_until_complete(task)
                     response = task.result()
-                except BadRequestError as e:
+                except (BadRequestError,
+                        herror,
+                        gaierror,
+                        ) as e:
                     print(e)
         except KeyboardInterrupt:
             ...

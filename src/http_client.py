@@ -78,8 +78,17 @@ class HttpClient:
 
     async def _send(self, request: HttpRequest):
         print(f'Sending request: {request.build_request()}')
-        self.writer.write(request.build_request())
-        await self.writer.drain()
+        while True:
+            try:
+                self.writer.write(request.build_request())
+                await self.writer.drain()
+                break
+            except (ConnectionError,
+                    ConnectionResetError,
+                    ConnectionAbortedError,
+                    ConnectionRefusedError,
+                    ):
+                await self._connect(request.full_url)
         await asyncio.sleep(0.01)
 
     async def _receive_response_information(self) -> tuple[
@@ -199,19 +208,3 @@ class HttpClient:
                               )
 
         return await self._get_response(request, timeout, file_response)
-
-
-async def main():
-    url = 'https://ulearn.me/Course/cs2/MazeBuilder_9ccc789a-9c35-4757-9194-6154c9f1d503'
-    client = HttpClient()
-    with open('content.txt', 'rb') as file_content, open(
-            'response.txt', 'wb') as file_response:
-        response = await client.request('post', url,
-                                        file_content=file_content,
-                                        file_response=file_response
-                                        )
-    await client.close()
-
-
-if __name__ == '__main__':
-    asyncio.run(main())
