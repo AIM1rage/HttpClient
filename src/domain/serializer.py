@@ -36,12 +36,14 @@ class Serializer:
 
     @staticmethod
     def load_cookies():
-        if not os.path.exists('data/cookies.json'):
+        if not os.path.exists('./cache/cookies.json'):
             return {}
-        with open('data/cookies.json', 'r', encoding='utf-8') as file:
+        with open('./cache/cookies.json', 'r', encoding='utf-8') as file:
             return json.load(file)
 
     @staticmethod
     def dump_cookies(cookie_jar: dict[str, dict[str, str]]):
-        with open('data/cookies.json', 'w', encoding='utf-8') as file:
+        if not os.path.exists('./cache'):
+            os.mkdir('./cache')
+        with open('./cache/cookies.json', 'w', encoding='utf-8') as file:
             json.dump(cookie_jar, file)
