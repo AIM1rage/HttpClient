@@ -8,6 +8,13 @@ from urllib.parse import urlparse
 
 class Serializer:
     @staticmethod
+    def try_decode_utf_8(content: bytes) -> str | bytes:
+        try:
+            return content.decode('utf-8')
+        except UnicodeDecodeError:
+            return content
+
+    @staticmethod
     def extract_host_port_ssl(url: str) -> tuple[str, int, bool]:
         url = urlparse(url)
         if url.scheme == 'https':

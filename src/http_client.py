@@ -1,8 +1,14 @@
 import asyncio
 from asyncio import StreamReader, StreamWriter
+
 from urllib.parse import urlparse
+
 from typing import Optional, BinaryIO
+
 from loguru import logger
+
+from prompt_toolkit.shortcuts import ProgressBar
+
 from src.http_request import HttpRequest
 from src.http_response import HttpResponse
 from src.serializer import Serializer
@@ -21,9 +27,11 @@ class BadRequestError(Exception):
 
 
 class HttpClient:
-    def __init__(self):
+    def __init__(self, progress_bar=Optional[ProgressBar]):
         self.reader: StreamReader = None
         self.writer: StreamWriter = None
+
+        self.progress_bar = progress_bar
 
         self.cookie_jar: dict[str, dict[str, str]] = Serializer.load_cookies()
 
@@ -70,7 +78,7 @@ class HttpClient:
         return HttpResponse(status_code, status_line, headers, content)
 
     async def _send(self, request: HttpRequest):
-        logger.info(f'Sending request: {request.build_request()}')
+        print(f'Sending request: {request.build_request()}')
         self.writer.write(request.build_request())
         await self.writer.drain()
         await asyncio.sleep(0.01)
@@ -84,8 +92,8 @@ class HttpClient:
         headers = {line.split(':')[0]: ':'.join(line.split(':')[1:]).strip()
                    for line
                    in info.split('\r\n')[1:-2]}
-        logger.info(f'Receiving status code: {status_code}')
-        logger.info(f'Receiving headers: {headers}')
+        print(f'Receiving status code: {status_code}')
+        print(f'Receiving headers: {headers}')
         await asyncio.sleep(0.01)
         return status_code, headers, status_line
 
@@ -99,20 +107,22 @@ class HttpClient:
                 chunk_size = int(chunk_size, base=16)
                 chunk = await self.reader.readexactly(chunk_size)
                 crlf = await self.reader.readuntil(b'\r\n')
-                logger.info(f'Receiving chunk sized {chunk_size}: {chunk}')
+                print(f'Receiving chunk sized {chunk_size}: {chunk}')
                 if chunk_size == 0:
                     break
                 content.append(chunk)
             content = b''.join(content)
             del headers['Transfer-Encoding']
             headers['Content-Length'] = str(len(content))
-            logger.info(f'Receiving content: {content}')
+            print(
+                f'Receiving content: \n{Serializer.try_decode_utf_8(content)}')
             await asyncio.sleep(0.01)
             return content
         if 'Content-Length' in headers:
             content_length = int(headers['Content-Length'])
             content = await self.reader.readexactly(content_length)
-            logger.info(f'Receiving content: {content}')
+            print(
+                f'Receiving content: \n{Serializer.try_decode_utf_8(content)}')
             await asyncio.sleep(0.01)
             return content
         raise UnknownContentError
@@ -164,7 +174,7 @@ class HttpClient:
                       file_response: Optional[BinaryIO] = None,
                       ) -> HttpResponse:
         host = urlparse(url).hostname
-        headers = {} if headers else headers
+        headers = headers if headers else {}
         content = file_content.read() if file_content else b''
 
         headers |= {'Host': host,

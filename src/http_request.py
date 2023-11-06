@@ -12,3 +12,6 @@ class HttpRequest(Request):
         request.append(b'')
         request.append(self.data)
         return b'\r\n'.join(request)
+
+    def __str__(self):
+        return f'{self.method} {self.full_url}'
