@@ -5,8 +5,6 @@ from urllib.parse import urlparse
 
 from typing import Optional, BinaryIO
 
-from loguru import logger
-
 from prompt_toolkit.shortcuts import ProgressBar
 
 from src.http_request import HttpRequest

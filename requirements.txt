@@ -1,3 +1,2 @@
-loguru~=0.7.2
 prompt_toolkit
 validators~=0.22.0
