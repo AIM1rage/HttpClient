@@ -7,9 +7,9 @@ from typing import Optional, BinaryIO
 
 from prompt_toolkit.shortcuts import ProgressBar
 
-from src.http_request import HttpRequest
-from src.http_response import HttpResponse
-from src.serializer import Serializer
+from src.domain.http_request import HttpRequest
+from src.domain.http_response import HttpResponse
+from src.domain.serializer import Serializer
 
 HAVING_BODY_METHODS = ['PUT', 'POST', 'PATCH']
 METHODS = ['TRACE', 'GET', 'POST', 'HEAD', 'CONNECT', 'DELETE', 'OPTIONS',

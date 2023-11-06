@@ -1,7 +1,7 @@
 import asyncio
 import unittest
-from src.http_client import HttpClient
-from src.http_client import METHODS, HAVING_BODY_METHODS
+from src.domain.http_client import HttpClient
+from src.domain.http_client import METHODS, HAVING_BODY_METHODS
 
 
 class HttpClientTest(unittest.TestCase):

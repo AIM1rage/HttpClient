@@ -1,8 +1,8 @@
 import json
 import os
 from typing import BinaryIO
-from src.http_response import HttpResponse
-from src.http_request import HttpRequest
+from src.domain.http_response import HttpResponse
+from src.domain.http_request import HttpRequest
 from urllib.parse import urlparse
 
 

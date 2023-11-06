@@ -1,6 +1,6 @@
 import validators
 import os
-from src.http_client import METHODS, BadRequestError
+from src.domain.http_client import METHODS, BadRequestError
 
 
 def validate_arguments(args):

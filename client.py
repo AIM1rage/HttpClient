@@ -3,14 +3,13 @@ import argparse
 import contextlib
 import os
 
-from validator import validate_arguments
-from completer_extensions import SingleWordCompleter
+from src.app.validator import validate_arguments
+from src.app.completer_extensions import SingleWordCompleter
 from socket import gaierror, herror
 from prompt_toolkit import PromptSession
-from prompt_toolkit.shortcuts import ProgressBar
 from prompt_toolkit.formatted_text import HTML
 
-from src.http_client import HttpClient, BadRequestError, METHODS
+from src.domain.http_client import HttpClient, BadRequestError, METHODS
 
 completer = SingleWordCompleter(words=METHODS)
 
