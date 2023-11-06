@@ -53,4 +53,4 @@ POST https://ulearn.me/ -H Content-Type application/json -H Authorization Bearer
 ```
 
 ## Screenshot
-![Example Screenshot](img.png)
+![Example Screenshot](data/img.png)
