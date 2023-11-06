@@ -115,7 +115,8 @@ class HttpClient:
                 chunk_size = int(chunk_size, base=16)
                 chunk = await self.reader.readexactly(chunk_size)
                 crlf = await self.reader.readuntil(b'\r\n')
-                print(f'Receiving chunk sized {chunk_size}: {chunk}')
+                if self.verbose:
+                    print(f'Receiving chunk sized {chunk_size}: {chunk}')
                 if chunk_size == 0:
                     break
                 content.append(chunk)
@@ -149,7 +150,8 @@ class HttpClient:
                 await self.close()
                 await self._connect(request.full_url)
                 return
-        if response is not None and response.headers['Connection'] == 'close':
+        if response is not None and response.headers.get(
+                'Connection') == 'close':
             await self.close()
             return
 

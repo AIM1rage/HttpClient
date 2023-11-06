@@ -46,7 +46,7 @@ def main():
                         help='The timeout for the HTTP response')
     parser.add_argument('-v', '--verbose', type=int,
                         default=1,
-                        help='Informative and detailed response')
+                        help='Informative and detailed response. Set verbose value to 0 to get less information')
     client = HttpClient()
     session = PromptSession(completer=completer)
     while True:
