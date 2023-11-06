@@ -1,5 +1,6 @@
 import json
 import os
+from typing import BinaryIO
 from src.http_response import HttpResponse
 from src.http_request import HttpRequest
 from urllib.parse import urlparse
@@ -15,9 +16,8 @@ class Serializer:
             return url.hostname, 80, False
 
     @staticmethod
-    def save_response(path: str, response: HttpResponse):
-        with open(path, 'wb') as file:
-            file.write(response.build_response())
+    def save_response(file_response: BinaryIO, response: HttpResponse):
+        file_response.write(response.build_response())
 
     @staticmethod
     def get_full_path(request: HttpRequest):

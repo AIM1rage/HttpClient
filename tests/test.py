@@ -23,9 +23,10 @@ class HttpClientTest(unittest.TestCase):
         url = 'https://urgu.org/150'
         responses = []
         for method in HAVING_BODY_METHODS:
-            responses.append(await client.request(method, url,
-                                                  content=b'aboba',
-                                                  timeout=3))
+            with open('test_content.txt', 'rb') as file_content:
+                responses.append(await client.request(method, url,
+                                                      file_content=file_content,
+                                                      timeout=3))
         for method in (m for m in METHODS if m not in HAVING_BODY_METHODS):
             responses.append(await client.request(method, url,
                                                   timeout=3))

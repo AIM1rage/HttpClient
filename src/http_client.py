@@ -1,7 +1,7 @@
 import asyncio
 from asyncio import StreamReader, StreamWriter
 from urllib.parse import urlparse
-from typing import Optional, AsyncIterator
+from typing import Optional, BinaryIO
 from loguru import logger
 from src.http_request import HttpRequest
 from src.http_response import HttpResponse
@@ -41,7 +41,7 @@ class HttpClient:
     async def _get_response(self,
                             request: HttpRequest,
                             timeout: int | float,
-                            path: str,
+                            file_response: BinaryIO,
                             ) -> HttpResponse:
         self._add_cookies(request)
 
@@ -54,8 +54,8 @@ class HttpClient:
 
         await self._configure_connection(response=response)
 
-        if path:
-            Serializer.save_response(path, response)
+        if file_response:
+            Serializer.save_response(file_response, response)
 
         await asyncio.sleep(1)
         return response
@@ -89,7 +89,8 @@ class HttpClient:
         await asyncio.sleep(0.01)
         return status_code, headers, status_line
 
-    async def _receive_response_content(self, headers: dict[str, str]) -> bytes:
+    async def _receive_response_content(self,
+                                        headers: dict[str, str]) -> bytes:
         if headers.get('Transfer-Encoding') == 'chunked':
             content = []
             while True:
@@ -105,13 +106,13 @@ class HttpClient:
             content = b''.join(content)
             del headers['Transfer-Encoding']
             headers['Content-Length'] = str(len(content))
-            logger.info(f'Receiving content: ...')
+            logger.info(f'Receiving content: {content}')
             await asyncio.sleep(0.01)
             return content
         if 'Content-Length' in headers:
             content_length = int(headers['Content-Length'])
             content = await self.reader.readexactly(content_length)
-            logger.info(f'Receiving content: ...')
+            logger.info(f'Receiving content: {content}')
             await asyncio.sleep(0.01)
             return content
         raise UnknownContentError
@@ -129,14 +130,14 @@ class HttpClient:
                 await self._connect(request.full_url)
                 return
         if response is not None and response.headers['Connection'] == 'close':
-            self.is_connected = False
             await self.close()
             return
 
     async def close(self):
-        self.is_connected = False
-        self.writer.close()
-        await self.writer.wait_closed()
+        if self.is_connected:
+            self.is_connected = False
+            self.writer.close()
+            await self.writer.wait_closed()
 
     def _add_cookies(self, request: HttpRequest):
         full_path = Serializer.get_full_path(request)
@@ -158,13 +159,13 @@ class HttpClient:
                       method: str,
                       url: str,
                       headers: Optional[dict[str, str]] = {},
-                      content: Optional[bytes] = b'',
+                      file_content: Optional[BinaryIO] = None,
                       timeout: Optional[int | float] = 5,
-                      path: Optional[str] = '',
+                      file_response: Optional[BinaryIO] = None,
                       ) -> HttpResponse:
         host = urlparse(url).hostname
-
         headers = {} if headers else headers
+        content = file_content.read() if file_content else b''
 
         headers |= {'Host': host,
                     'Connection': 'keep-alive',
@@ -174,42 +175,28 @@ class HttpClient:
         if method.upper() not in METHODS:
             raise BadRequestError(f'Invalid method {method}')
 
-        if content and method.upper() not in HAVING_BODY_METHODS:
+        if file_content and method.upper() not in HAVING_BODY_METHODS:
             raise BadRequestError(
                 f"Request with specified method ({method}) doesn't have body")
 
         request = HttpRequest(url,
                               method=method.upper(),
                               headers=headers,
-                              data=content
+                              data=content,
                               )
 
-        return await self._get_response(request, timeout, path)
+        return await self._get_response(request, timeout, file_response)
 
 
 async def main():
-    # url1 = 'https://ulearn.me/Course/BasicProgramming/Praktika_Mediannyy_fil_tr__4597a6db-5f8e-4bad-a435-8755a3cb61b5'
-    url2 = 'https://ulearn.me/Course/cs2/MazeBuilder_9ccc789a-9c35-4757-9194-6154c9f1d503'
-    # url1 = 'https://kadm.kmath.ru/news.php'
-    # url2 = 'https://kadm.kmath.ru/news.php'
-    # url1 = url2 = 'https://alexbers.com/'
-    # url1 = url2 = 'https://yandex.ru/'
-    # url1 = url2 = 'https://developer.mozilla.org/en-US/docs/Glossary/Payload_header'
-    # url1 = url2 = 'http://www.china.com.cn/'
-    # url1 = url2 = 'http://government.ru/'
-    url1 = 'https://urgu.org/151'
-    # url1 = url2 = 'https://www.example.com'
+    url = 'https://ulearn.me/Course/cs2/MazeBuilder_9ccc789a-9c35-4757-9194-6154c9f1d503'
     client = HttpClient()
-    # await client.connect(url1)
-    for method in HAVING_BODY_METHODS:
-        await client.request(method, url2,
-                             content=b'aboba',
-                             path=f'{method}.txt',
-                             timeout=3)
-    for method in (m for m in METHODS if m not in HAVING_BODY_METHODS):
-        await client.request(method, url1,
-                             path=f'{method}.txt',
-                             timeout=3)
+    with open('content.txt', 'rb') as file_content, open(
+            'response.txt', 'wb') as file_response:
+        response = await client.request('post', url,
+                                        file_content=file_content,
+                                        file_response=file_response
+                                        )
     await client.close()
 
 
