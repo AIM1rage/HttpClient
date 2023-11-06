@@ -73,6 +73,9 @@ def main():
     parser.add_argument('-t', '--timeout', type=float,
                         default=5,
                         help='The timeout for the HTTP response')
+    parser.add_argument('-v', '--verbose', type=int,
+                        default=1,
+                        help='Informative and detailed response')
     client = HttpClient()
     session = PromptSession(completer=completer)
     while True:
@@ -108,10 +111,11 @@ def main():
                                        headers=headers,
                                        file_content=input_file,
                                        file_response=output_file,
+                                       verbose=args.verbose,
                                        ))
                     loop.run_until_complete(task)
                     response = task.result()
-                except (BadRequestError) as e:
+                except BadRequestError as e:
                     print(e)
         except KeyboardInterrupt:
             ...

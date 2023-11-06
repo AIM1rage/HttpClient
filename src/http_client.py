@@ -29,6 +29,7 @@ class HttpClient:
         self.reader: StreamReader = None
         self.writer: StreamWriter = None
 
+        self.verbose: int = 1
         self.progress_bar = progress_bar
 
         self.cookie_jar: dict[str, dict[str, str]] = Serializer.load_cookies()
@@ -112,18 +113,20 @@ class HttpClient:
             content = b''.join(content)
             del headers['Transfer-Encoding']
             headers['Content-Length'] = str(len(content))
-            print(
-                f'Receiving content: \n{Serializer.try_decode_utf_8(content)}')
+            if self.verbose:
+                print(
+                    f'Receiving content: \n{Serializer.try_decode_utf_8(content)}')
             await asyncio.sleep(0.01)
             return content
         if 'Content-Length' in headers:
             content_length = int(headers['Content-Length'])
             content = await self.reader.readexactly(content_length)
-            print(
-                f'Receiving content: \n{Serializer.try_decode_utf_8(content)}')
+            if self.verbose:
+                print(
+                    f'Receiving content: \n{Serializer.try_decode_utf_8(content)}')
             await asyncio.sleep(0.01)
             return content
-        raise UnknownContentError
+        raise UnknownContentError('Unknown response content')
 
     async def _configure_connection(self,
                                     request: HttpRequest = None,
@@ -170,10 +173,12 @@ class HttpClient:
                       file_content: Optional[BinaryIO] = None,
                       timeout: Optional[int | float] = 5,
                       file_response: Optional[BinaryIO] = None,
+                      verbose: Optional[int | bool] = 1,
                       ) -> HttpResponse:
         host = urlparse(url).hostname
         headers = headers if headers else {}
         content = file_content.read() if file_content else b''
+        self.verbose = verbose
 
         headers |= {'Host': host,
                     'Connection': 'keep-alive',
