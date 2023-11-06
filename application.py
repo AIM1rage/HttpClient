@@ -1,30 +1,16 @@
 import asyncio
 import argparse
-import os.path
 import contextlib
-import validators
+import os
 
-from validators import ValidationError
+from validator import validate_arguments
+from completer_extensions import SingleWordCompleter
 from socket import gaierror, herror
 from prompt_toolkit import PromptSession
 from prompt_toolkit.shortcuts import ProgressBar
 from prompt_toolkit.formatted_text import HTML
-from prompt_toolkit.completion import WordCompleter, Completion
 
 from src.http_client import HttpClient, BadRequestError, METHODS
-
-
-class SingleWordCompleter(WordCompleter):
-    def __init__(self, words):
-        super().__init__(words)
-
-    def get_completions(self, document, complete_event):
-        input_text = document.text.lower()
-        if " " not in input_text:
-            for word in self.words:
-                if word.lower().startswith(input_text):
-                    yield Completion(word, start_position=-len(input_text))
-
 
 completer = SingleWordCompleter(words=METHODS)
 
@@ -32,21 +18,6 @@ completer = SingleWordCompleter(words=METHODS)
 @contextlib.contextmanager
 def some_context():
     yield None
-
-
-def validate_arguments(args):
-    if args.method.upper() not in METHODS:
-        raise BadRequestError(f'Invalid method {args.method}')
-    if not validators.url(args.url):
-        raise ValueError(f'Invalid URL {args.url}')
-    if args.input:
-        if not os.path.exists(args.input):
-            raise FileNotFoundError(f'Input file doesn\'t exist')
-        if not os.access(args.input, os.R_OK):
-            raise PermissionError(f'Not enough rights to read')
-    if args.output:
-        if not os.access(args.output, os.W_OK):
-            raise PermissionError(f'Not enough rights to read')
 
 
 def main():
@@ -88,7 +59,6 @@ def main():
             try:
                 validate_arguments(args)
             except (BadRequestError,
-                    ValidationError,
                     FileNotFoundError,
                     PermissionError,
                     TypeError,
