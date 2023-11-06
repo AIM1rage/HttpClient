@@ -1,7 +1,6 @@
 import asyncio
 from asyncio import StreamReader, StreamWriter
 from urllib.parse import urlparse
-from collections import deque
 from typing import Optional, AsyncIterator
 from loguru import logger
 from src.http_request import HttpRequest
@@ -31,29 +30,29 @@ class HttpClient:
         self.last_connection: tuple[str, int] = None
         self.is_connected: bool = False
 
-    async def connect(self, url: str):
-        host, port, ssl = HttpClient.extract_host_port_ssl(url)
+    async def _connect(self, url: str):
+        host, port, ssl = Serializer.extract_host_port_ssl(url)
         self.reader, self.writer = await asyncio.open_connection(
             host, port, ssl=ssl
         )
         self.last_connection = (host, port)
         self.is_connected = True
 
-    async def get_response(self,
-                           request: HttpRequest,
-                           timeout: int | float,
-                           path: str,
-                           ) -> HttpResponse:
-        self.add_cookies(request)
+    async def _get_response(self,
+                            request: HttpRequest,
+                            timeout: int | float,
+                            path: str,
+                            ) -> HttpResponse:
+        self._add_cookies(request)
 
-        await self.configure_connection(request=request)
+        await self._configure_connection(request=request)
 
         response = await asyncio.wait_for(
-            self.receive_response(request),
+            self._receive_response(request),
             timeout)
-        self.extract_cookies(request, response)
+        self._extract_cookies(request, response)
 
-        await self.configure_connection(response=response)
+        await self._configure_connection(response=response)
 
         if path:
             Serializer.save_response(path, response)
@@ -61,22 +60,22 @@ class HttpClient:
         await asyncio.sleep(1)
         return response
 
-    async def receive_response(self, request: HttpRequest) -> HttpResponse:
-        await self.send(request)
-        status_code, headers, status_line = await self.receive_response_information()
+    async def _receive_response(self, request: HttpRequest) -> HttpResponse:
+        await self._send(request)
+        status_code, headers, status_line = await self._receive_response_information()
         if request.method != 'HEAD':
-            content = await self.receive_response_content(headers)
+            content = await self._receive_response_content(headers)
         else:
             content = b''
         return HttpResponse(status_code, status_line, headers, content)
 
-    async def send(self, request: HttpRequest):
+    async def _send(self, request: HttpRequest):
         logger.info(f'Sending request: {request.build_request()}')
         self.writer.write(request.build_request())
         await self.writer.drain()
         await asyncio.sleep(0.01)
 
-    async def receive_response_information(self) -> tuple[
+    async def _receive_response_information(self) -> tuple[
         int, dict[str, str], str]:
         info = (await asyncio.wait_for(self.reader.readuntil(b'\r\n\r\n'),
                                        10)).decode()
@@ -90,7 +89,7 @@ class HttpClient:
         await asyncio.sleep(0.01)
         return status_code, headers, status_line
 
-    async def receive_response_content(self, headers: dict[str, str]) -> bytes:
+    async def _receive_response_content(self, headers: dict[str, str]) -> bytes:
         if headers.get('Transfer-Encoding') == 'chunked':
             content = []
             while True:
@@ -117,17 +116,17 @@ class HttpClient:
             return content
         raise UnknownContentError
 
-    async def configure_connection(self,
-                                   request: HttpRequest = None,
-                                   response: HttpResponse = None):
+    async def _configure_connection(self,
+                                    request: HttpRequest = None,
+                                    response: HttpResponse = None):
         if request is not None:
-            host, port, _ = HttpClient.extract_host_port_ssl(request.full_url)
+            host, port, _ = Serializer.extract_host_port_ssl(request.full_url)
             if not self.is_connected:
-                await self.connect(request.full_url)
+                await self._connect(request.full_url)
                 return
             if self.is_connected and (host, port) != self.last_connection:
                 await self.close()
-                await self.connect(request.full_url)
+                await self._connect(request.full_url)
                 return
         if response is not None and response.headers['Connection'] == 'close':
             self.is_connected = False
@@ -139,15 +138,7 @@ class HttpClient:
         self.writer.close()
         await self.writer.wait_closed()
 
-    @staticmethod
-    def extract_host_port_ssl(url: str) -> tuple[str, int, bool]:
-        url = urlparse(url)
-        if url.scheme == 'https':
-            return url.hostname, 443, True
-        else:
-            return url.hostname, 80, False
-
-    def add_cookies(self, request: HttpRequest):
+    def _add_cookies(self, request: HttpRequest):
         full_path = Serializer.get_full_path(request)
         if full_path in self.cookie_jar:
             cookies = []
@@ -155,7 +146,7 @@ class HttpClient:
                 cookies.append(f'{name}={value}')
             request.add_header('Cookie', ', '.join(cookies))
 
-    def extract_cookies(self, request: HttpRequest, response: HttpResponse):
+    def _extract_cookies(self, request: HttpRequest, response: HttpResponse):
         full_path = Serializer.get_full_path(request)
         if response.has_header('Set-Cookie'):
             cookie = response.headers['Set-Cookie'].split('; ')[0]
@@ -193,7 +184,7 @@ class HttpClient:
                               data=content
                               )
 
-        return await self.get_response(request, timeout, path)
+        return await self._get_response(request, timeout, path)
 
 
 async def main():

@@ -7,6 +7,14 @@ from urllib.parse import urlparse
 
 class Serializer:
     @staticmethod
+    def extract_host_port_ssl(url: str) -> tuple[str, int, bool]:
+        url = urlparse(url)
+        if url.scheme == 'https':
+            return url.hostname, 443, True
+        else:
+            return url.hostname, 80, False
+
+    @staticmethod
     def save_response(path: str, response: HttpResponse):
         with open(path, 'wb') as file:
             file.write(response.build_response())
