@@ -69,12 +69,17 @@ class HttpClient:
 
     async def _receive_response(self, request: HttpRequest) -> HttpResponse:
         await self._send(request)
-        status_code, headers, status_line = await self._receive_response_information()
+        raw_response = []
+        status_code, headers, status_line = await self._receive_response_information(
+            raw_response)
         if request.method != 'HEAD':
-            content = await self._receive_response_content(headers)
+            content = await self._receive_response_content(headers,
+                                                           raw_response)
         else:
             content = b''
-        return HttpResponse(status_code, status_line, headers, content)
+        return HttpResponse(status_code, status_line, headers, content,
+                            raw_response,
+                            )
 
     async def _send(self, request: HttpRequest):
         print(f'Sending request: {request.build_request()}')
@@ -91,10 +96,13 @@ class HttpClient:
                 await self._connect(request.full_url)
         await asyncio.sleep(0.01)
 
-    async def _receive_response_information(self) -> tuple[
+    async def _receive_response_information(self,
+                                            raw_response:
+                                            list[bytes]) -> tuple[
         int, dict[str, str], str]:
-        info = (await asyncio.wait_for(self.reader.readuntil(b'\r\n\r\n'),
-                                       10)).decode()
+        data = await self.reader.readuntil(b'\r\n\r\n')
+        raw_response.append(data)
+        info = data.decode().lower()
         status_line = info.split('\r\n')[0]
         status_code = int(status_line.split()[1])
         headers = {line.split(':')[0]: ':'.join(line.split(':')[1:]).strip()
@@ -106,34 +114,38 @@ class HttpClient:
         return status_code, headers, status_line
 
     async def _receive_response_content(self,
-                                        headers: dict[str, str]) -> bytes:
-        if headers.get('Transfer-Encoding') == 'chunked':
+                                        headers: dict[str, str],
+                                        raw_response: list[bytes],
+                                        ) -> bytes:
+        if headers.get('transfer-encoding') == 'chunked':
             content = []
             while True:
-                chunk_size = (
-                    await self.reader.readuntil(b'\r\n')).decode().strip()
-                chunk_size = int(chunk_size, base=16)
+                chunk_size_data = await self.reader.readuntil(b'\r\n')
+                chunk_size = int(chunk_size_data.decode().strip(), base=16)
+                if chunk_size == 0:
+                    chunk_with_crlf = await self.reader.readuntil(b'\r\n')
+                    break
                 chunk = await self.reader.readexactly(chunk_size)
                 crlf = await self.reader.readuntil(b'\r\n')
                 if self.verbose:
                     print(f'Receiving chunk sized {chunk_size}: {chunk}')
-                if chunk_size == 0:
-                    break
                 content.append(chunk)
             content = b''.join(content)
-            del headers['Transfer-Encoding']
-            headers['Content-Length'] = str(len(content))
+            del headers['transfer-encoding']
+            headers['content-length'] = str(len(content))
             if self.verbose:
                 print(
                     f'Receiving content: \n{Serializer.try_decode_utf_8(content)}')
+            raw_response.append(content)
             await asyncio.sleep(0.01)
             return content
-        if 'Content-Length' in headers:
-            content_length = int(headers['Content-Length'])
+        if 'content-length' in headers:
+            content_length = int(headers['content-length'])
             content = await self.reader.readexactly(content_length)
             if self.verbose:
                 print(
                     f'Receiving content: \n{Serializer.try_decode_utf_8(content)}')
+            raw_response.append(content)
             await asyncio.sleep(0.01)
             return content
         raise UnknownContentError('Unknown response content')
@@ -151,7 +163,7 @@ class HttpClient:
                 await self._connect(request.full_url)
                 return
         if response is not None and response.headers.get(
-                'Connection') == 'close':
+                'connection') == 'close':
             await self.close()
             return
 
@@ -171,8 +183,8 @@ class HttpClient:
 
     def _extract_cookies(self, request: HttpRequest, response: HttpResponse):
         full_path = Serializer.get_full_path(request)
-        if response.has_header('Set-Cookie'):
-            cookie = response.headers['Set-Cookie'].split('; ')[0]
+        if response.has_header('set-cookie'):
+            cookie = response.headers['set-cookie'].split('; ')[0]
             name, value = cookie.split('=')
             self.cookie_jar.setdefault(full_path, {})[name] = value
             Serializer.dump_cookies(self.cookie_jar)

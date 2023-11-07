@@ -1,26 +1,31 @@
 import asyncio
-import argparse
 import contextlib
 import os
 
 from src.app.validator import validate_arguments
 from src.app.completer_extensions import SingleWordCompleter
 from socket import gaierror, herror
+from ssl import SSLCertVerificationError
+from asyncio.exceptions import TimeoutError
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
-
-from src.domain.http_client import HttpClient, BadRequestError, METHODS
+from src.domain.http_client import (HttpClient,
+                                    METHODS,
+                                    BadRequestError,
+                                    UnknownContentError,
+                                    )
+from src.app.client_argparser import ClientArgumentParser
 
 completer = SingleWordCompleter(words=METHODS)
 
 
 @contextlib.contextmanager
-def some_context():
+def none_context():
     yield None
 
 
 def main():
-    parser = argparse.ArgumentParser(
+    parser = ClientArgumentParser(
         prog='HTTP client',
         description='Program for sending HTTP requests and receiving responses from servers to interact with web services and retrieve data',
     )
@@ -50,31 +55,30 @@ def main():
     session = PromptSession(completer=completer)
     while True:
         try:
-            args = parser.parse_args(
-                session.prompt(HTML(
-                    f'<MediumSeaGreen>http_client</MediumSeaGreen><yellow>@</yellow><tomato>{os.getlogin()}</tomato>> ')).split())
-            headers = {name: value for name, value in args.header}
-
             try:
+                args = parser.parse_args(
+                    session.prompt(HTML(
+                        f'<MediumSeaGreen>http_client</MediumSeaGreen><yellow>@</yellow><tomato>{os.getlogin()}</tomato>> ')).split())
+                headers = {name: value for name, value in args.header}
                 validate_arguments(args)
             except (BadRequestError,
                     FileNotFoundError,
-                    PermissionError,
                     TypeError,
                     ValueError,
                     ) as e:
+
                 print(e)
                 continue
 
+            loop = asyncio.get_event_loop()
             with open(
                     args.input,
                     'rb',
-            ) if args.input else some_context() as input_file, open(
+            ) if args.input else none_context() as input_file, open(
                 args.output,
                 'wb',
-            ) if args.output else some_context() as output_file:
+            ) if args.output else none_context() as output_file:
                 try:
-                    loop = asyncio.get_event_loop()
                     task = loop.create_task(
                         client.request(args.method, args.url,
                                        headers=headers,
@@ -84,10 +88,18 @@ def main():
                                        ))
                     loop.run_until_complete(task)
                     response = task.result()
+                    print('Success!')
                 except (BadRequestError,
+                        UnknownContentError,
                         herror,
                         gaierror,
+                        SSLCertVerificationError,
+                        OSError,
+                        TimeoutError,
                         ) as e:
+                    task = loop.create_task(client.close())
+                    loop.run_until_complete(task)
+                    print('Failed...')
                     print(e)
         except KeyboardInterrupt:
             ...
