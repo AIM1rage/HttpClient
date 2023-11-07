@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 class HttpRequest(Request):
     def build_request(self) -> bytes:
         path = urlparse(self.full_url).path
-        path = path if path else '/'
+        path = path if path.endswith('/') else path + '/'
         request = [f'{self.method} {path} HTTP/1.1'.encode()]
         for header, value in self.headers.items():
             request.append(f'{header}: {value}'.encode())

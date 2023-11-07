@@ -88,7 +88,8 @@ def main():
                                        ))
                     loop.run_until_complete(task)
                     response = task.result()
-                    print('Success!')
+                    print('Failed...' if str(response.status_code).startswith(
+                        ('4', '5')) else 'Success!')
                 except (BadRequestError,
                         UnknownContentError,
                         herror,

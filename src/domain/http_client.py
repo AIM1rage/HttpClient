@@ -206,6 +206,7 @@ class HttpClient:
         headers |= {'Host': host,
                     'Connection': 'keep-alive',
                     'Content-Length': str(len(content)),
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0',
                     }
 
         if method.upper() not in METHODS:
