@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import os
+import sys
 
 from src.app.validator import validate_arguments
 from src.app.completer_extensions import SingleWordCompleter
@@ -23,6 +24,62 @@ completer = SingleWordCompleter(words=METHODS)
 @contextlib.contextmanager
 def none_context():
     yield None
+
+
+def main_event(parser: ClientArgumentParser,
+               client: HttpClient,
+               session: PromptSession,
+               ):
+    try:
+        if len(sys.argv) > 1:
+            args = parser.parse_args(sys.argv[1:])
+        else:
+            args = parser.parse_args(
+                session.prompt(HTML(
+                    f'<MediumSeaGreen>http_client</MediumSeaGreen><yellow>@</yellow><tomato>{os.getlogin()}</tomato>> ')).split())
+        headers = {name: value for name, value in args.header}
+        validate_arguments(args)
+    except (BadRequestError,
+            FileNotFoundError,
+            TypeError,
+            ValueError,
+            ) as e:
+
+        print(e)
+        return
+    loop = asyncio.get_event_loop()
+    with open(
+            args.input,
+            'rb',
+    ) if args.input else none_context() as input_file, open(
+        args.output,
+        'wb',
+    ) if args.output else none_context() as output_file:
+        try:
+            task = loop.create_task(
+                client.request(args.method, args.url,
+                               headers=headers,
+                               file_content=input_file,
+                               file_response=output_file,
+                               verbose=args.verbose,
+                               ))
+            loop.run_until_complete(task)
+            response = task.result()
+            print('Failed...' if str(
+                response.status_code).startswith(
+                ('4', '5')) else 'Success!')
+        except (BadRequestError,
+                UnknownContentError,
+                herror,
+                gaierror,
+                SSLCertVerificationError,
+                OSError,
+                TimeoutError,
+                ) as e:
+            task = loop.create_task(client.close())
+            loop.run_until_complete(task)
+            print('Failed...')
+            print(e)
 
 
 def main():
@@ -57,58 +114,13 @@ def main():
         session = PromptSession(completer=completer)
         while True:
             try:
-                try:
-                    args = parser.parse_args(
-                        session.prompt(HTML(
-                            f'<MediumSeaGreen>http_client</MediumSeaGreen><yellow>@</yellow><tomato>{os.getlogin()}</tomato>> ')).split())
-                    headers = {name: value for name, value in args.header}
-                    validate_arguments(args)
-                except (BadRequestError,
-                        FileNotFoundError,
-                        TypeError,
-                        ValueError,
-                        ) as e:
-
-                    print(e)
-                    continue
-
-                loop = asyncio.get_event_loop()
-                with open(
-                        args.input,
-                        'rb',
-                ) if args.input else none_context() as input_file, open(
-                    args.output,
-                    'wb',
-                ) if args.output else none_context() as output_file:
-                    try:
-                        task = loop.create_task(
-                            client.request(args.method, args.url,
-                                           headers=headers,
-                                           file_content=input_file,
-                                           file_response=output_file,
-                                           verbose=args.verbose,
-                                           ))
-                        loop.run_until_complete(task)
-                        response = task.result()
-                        print('Failed...' if str(
-                            response.status_code).startswith(
-                            ('4', '5')) else 'Success!')
-                    except (BadRequestError,
-                            UnknownContentError,
-                            herror,
-                            gaierror,
-                            SSLCertVerificationError,
-                            OSError,
-                            TimeoutError,
-                            ) as e:
-                        task = loop.create_task(client.close())
-                        loop.run_until_complete(task)
-                        print('Failed...')
-                        print(e)
+                main_event(parser, client, session)
             except KeyboardInterrupt:
                 ...
             except EOFError:
                 print('Bye!')
+                break
+            if len(sys.argv) > 1:
                 break
 
 
