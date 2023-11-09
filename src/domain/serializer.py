@@ -24,7 +24,7 @@ class Serializer:
 
     @staticmethod
     def save_response(file_response: BinaryIO, response: HttpResponse):
-        file_response.write(response.build_response())
+        file_response.write(response.content)
 
     @staticmethod
     def get_full_path(request: HttpRequest):

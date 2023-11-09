@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 from typing import Optional, BinaryIO
 
 from prompt_toolkit.shortcuts import ProgressBar
+from prompt_toolkit.formatted_text import HTML
 
 from src.domain.http_request import HttpRequest
 from src.domain.http_response import HttpResponse
@@ -54,9 +55,7 @@ class HttpClient:
 
         await self._configure_connection(request=request)
 
-        response = await asyncio.wait_for(
-            self._receive_response(request),
-            timeout)
+        response = await self._receive_response(request, timeout)
         self._extract_cookies(request, response)
 
         await self._configure_connection(response=response)
@@ -67,14 +66,18 @@ class HttpClient:
         await asyncio.sleep(1)
         return response
 
-    async def _receive_response(self, request: HttpRequest) -> HttpResponse:
-        await self._send(request)
+    async def _receive_response(self,
+                                request: HttpRequest,
+                                timeout: int | float) -> HttpResponse:
+        await asyncio.wait_for(self._send(request), timeout)
         raw_response = []
-        status_code, headers, status_line = await self._receive_response_information(
-            raw_response)
+        status_code, headers, status_line = await asyncio.wait_for(
+            self._receive_response_information(raw_response), timeout)
         if request.method != 'HEAD':
             content = await self._receive_response_content(headers,
-                                                           raw_response)
+                                                           raw_response,
+                                                           timeout,
+                                                           )
         else:
             content = b''
         return HttpResponse(status_code, status_line, headers, content,
@@ -97,8 +100,8 @@ class HttpClient:
         await asyncio.sleep(0.01)
 
     async def _receive_response_information(self,
-                                            raw_response:
-                                            list[bytes]) -> tuple[
+                                            raw_response: list[bytes],
+                                            ) -> tuple[
         int, dict[str, str], str]:
         data = await self.reader.readuntil(b'\r\n\r\n')
         raw_response.append(data)
@@ -116,6 +119,7 @@ class HttpClient:
     async def _receive_response_content(self,
                                         headers: dict[str, str],
                                         raw_response: list[bytes],
+                                        timeout: int | float,
                                         ) -> bytes:
         if headers.get('transfer-encoding') == 'chunked':
             content = []
@@ -125,30 +129,47 @@ class HttpClient:
                 if chunk_size == 0:
                     chunk_with_crlf = await self.reader.readuntil(b'\r\n')
                     break
-                chunk = await self.reader.readexactly(chunk_size)
+                chunk = await self._download_content(chunk_size, timeout)
                 crlf = await self.reader.readuntil(b'\r\n')
-                if self.verbose:
-                    print(f'Receiving chunk sized {chunk_size}: {chunk}')
                 content.append(chunk)
             content = b''.join(content)
             del headers['transfer-encoding']
             headers['content-length'] = str(len(content))
-            if self.verbose:
-                print(
-                    f'Receiving content: \n{Serializer.try_decode_utf_8(content)}')
             raw_response.append(content)
             await asyncio.sleep(0.01)
             return content
         if 'content-length' in headers:
             content_length = int(headers['content-length'])
-            content = await self.reader.readexactly(content_length)
-            if self.verbose:
-                print(
-                    f'Receiving content: \n{Serializer.try_decode_utf_8(content)}')
+            content = await self._download_content(content_length, timeout)
             raw_response.append(content)
             await asyncio.sleep(0.01)
             return content
         raise UnknownContentError('Unknown response content')
+
+    async def _download_content(self,
+                                content_length: int,
+                                timeout: int | float,
+                                ) -> bytes:
+        content = []
+        chunk_size = 2 ** 16
+        chunks_count = content_length // chunk_size + (
+            1 if
+            content_length % chunk_size else
+            0)
+        label = HTML(
+            ' <style bg="yellow" fg="black">Downloading content...</style>')
+        for i in self.progress_bar(range(chunks_count),
+                                   label=label,
+                                   remove_when_done=True,
+                                   ):
+            size = (content_length % chunk_size if
+                    i == chunks_count - 1 and
+                    (content_length % chunk_size) else
+                    chunk_size)
+            data = await asyncio.wait_for(
+                self.reader.readexactly(size), timeout)
+            content.append(data)
+        return b''.join(content)
 
     async def _configure_connection(self,
                                     request: HttpRequest = None,
@@ -185,7 +206,7 @@ class HttpClient:
         full_path = Serializer.get_full_path(request)
         if response.has_header('set-cookie'):
             cookie = response.headers['set-cookie'].split('; ')[0]
-            name, value = cookie.split('=')
+            name, value = cookie.split('=')[0], '='.join(cookie.split('=')[1:])
             self.cookie_jar.setdefault(full_path, {})[name] = value
             Serializer.dump_cookies(self.cookie_jar)
 

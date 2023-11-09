@@ -9,6 +9,7 @@ from ssl import SSLCertVerificationError
 from asyncio.exceptions import TimeoutError
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.shortcuts import ProgressBar
 from src.domain.http_client import (HttpClient,
                                     METHODS,
                                     BadRequestError,
@@ -51,62 +52,64 @@ def main():
     parser.add_argument('-v', '--verbose', type=int,
                         default=1,
                         help='Informative and detailed response. Set verbose value to 0 to get less information')
-    client = HttpClient()
-    session = PromptSession(completer=completer)
-    while True:
-        try:
+    with ProgressBar() as progress_bar:
+        client = HttpClient(progress_bar)
+        session = PromptSession(completer=completer)
+        while True:
             try:
-                args = parser.parse_args(
-                    session.prompt(HTML(
-                        f'<MediumSeaGreen>http_client</MediumSeaGreen><yellow>@</yellow><tomato>{os.getlogin()}</tomato>> ')).split())
-                headers = {name: value for name, value in args.header}
-                validate_arguments(args)
-            except (BadRequestError,
-                    FileNotFoundError,
-                    TypeError,
-                    ValueError,
-                    ) as e:
-
-                print(e)
-                continue
-
-            loop = asyncio.get_event_loop()
-            with open(
-                    args.input,
-                    'rb',
-            ) if args.input else none_context() as input_file, open(
-                args.output,
-                'wb',
-            ) if args.output else none_context() as output_file:
                 try:
-                    task = loop.create_task(
-                        client.request(args.method, args.url,
-                                       headers=headers,
-                                       file_content=input_file,
-                                       file_response=output_file,
-                                       verbose=args.verbose,
-                                       ))
-                    loop.run_until_complete(task)
-                    response = task.result()
-                    print('Failed...' if str(response.status_code).startswith(
-                        ('4', '5')) else 'Success!')
+                    args = parser.parse_args(
+                        session.prompt(HTML(
+                            f'<MediumSeaGreen>http_client</MediumSeaGreen><yellow>@</yellow><tomato>{os.getlogin()}</tomato>> ')).split())
+                    headers = {name: value for name, value in args.header}
+                    validate_arguments(args)
                 except (BadRequestError,
-                        UnknownContentError,
-                        herror,
-                        gaierror,
-                        SSLCertVerificationError,
-                        OSError,
-                        TimeoutError,
+                        FileNotFoundError,
+                        TypeError,
+                        ValueError,
                         ) as e:
-                    task = loop.create_task(client.close())
-                    loop.run_until_complete(task)
-                    print('Failed...')
+
                     print(e)
-        except KeyboardInterrupt:
-            ...
-        except EOFError:
-            print('Bye!')
-            break
+                    continue
+
+                loop = asyncio.get_event_loop()
+                with open(
+                        args.input,
+                        'rb',
+                ) if args.input else none_context() as input_file, open(
+                    args.output,
+                    'wb',
+                ) if args.output else none_context() as output_file:
+                    try:
+                        task = loop.create_task(
+                            client.request(args.method, args.url,
+                                           headers=headers,
+                                           file_content=input_file,
+                                           file_response=output_file,
+                                           verbose=args.verbose,
+                                           ))
+                        loop.run_until_complete(task)
+                        response = task.result()
+                        print('Failed...' if str(
+                            response.status_code).startswith(
+                            ('4', '5')) else 'Success!')
+                    except (BadRequestError,
+                            UnknownContentError,
+                            herror,
+                            gaierror,
+                            SSLCertVerificationError,
+                            OSError,
+                            TimeoutError,
+                            ) as e:
+                        task = loop.create_task(client.close())
+                        loop.run_until_complete(task)
+                        print('Failed...')
+                        print(e)
+            except KeyboardInterrupt:
+                ...
+            except EOFError:
+                print('Bye!')
+                break
 
 
 if __name__ == '__main__':
