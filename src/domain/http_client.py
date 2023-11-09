@@ -26,7 +26,7 @@ class BadRequestError(Exception):
 
 
 class HttpClient:
-    def __init__(self, progress_bar=Optional[ProgressBar]):
+    def __init__(self, progress_bar: Optional[ProgressBar] = None):
         self.reader: StreamReader = None
         self.writer: StreamWriter = None
 
@@ -158,10 +158,14 @@ class HttpClient:
             0)
         label = HTML(
             ' <style bg="yellow" fg="black">Downloading content...</style>')
-        for i in self.progress_bar(range(chunks_count),
+        if self.progress_bar:
+            it = self.progress_bar(range(chunks_count),
                                    label=label,
                                    remove_when_done=True,
-                                   ):
+                                   )
+        else:
+            it = range(chunks_count)
+        for i in it:
             size = (content_length % chunk_size if
                     i == chunks_count - 1 and
                     (content_length % chunk_size) else
